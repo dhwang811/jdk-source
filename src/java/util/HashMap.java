@@ -252,17 +252,12 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     static final int TREEIFY_THRESHOLD = 8;
 
     /**
-     * The bin count threshold for untreeifying a (split) bin during a
-     * resize operation. Should be less than TREEIFY_THRESHOLD, and at
-     * most 6 to mesh with shrinkage detection under removal.
+     * 桶内红黑树节点数小于该值时转化为链表
      */
     static final int UNTREEIFY_THRESHOLD = 6;
 
     /**
-     * The smallest table capacity for which bins may be treeified.
-     * (Otherwise the table is resized if too many nodes in a bin.)
-     * Should be at least 4 * TREEIFY_THRESHOLD to avoid conflicts
-     * between resizing and treeification thresholds.
+     * 当桶内链表长度大于8时，判断最小树形化容量大小，小于该值走扩容，大于该值树形化
      */
     static final int MIN_TREEIFY_CAPACITY = 64;
 
@@ -604,41 +599,56 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                    boolean evict) {
         Node<K,V>[] tab; Node<K,V> p; int n, i;
         if ((tab = table) == null || (n = tab.length) == 0)
+            // 1、table为空，初始化table
             n = (tab = resize()).length;
         if ((p = tab[i = (n - 1) & hash]) == null)
+            // 2、根据当前待插入节点hash值计算应放入的桶位置，当前桶链表为空时直接创建节点放入
             tab[i] = newNode(hash, key, value, null);
         else {
+            // 3、当前桶内链表不为空时，做如下处理
             Node<K,V> e; K k;
             if (p.hash == hash &&
                 ((k = p.key) == key || (key != null && key.equals(k))))
+                // 3.1、链表首节点与待插入节点key值相等，将e指向桶头结点
                 e = p;
             else if (p instanceof TreeNode)
+                // 3.2、当前节点类型为红黑树节点，将当前节点放入红黑树中，若树中存在对应key则返回查询到的节点，否则返回空
                 e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
             else {
+                // 3.3、执行链表插入
                 for (int binCount = 0; ; ++binCount) {
                     if ((e = p.next) == null) {
+                        // 3.4、遍历到链表尾部，在链表尾部放入节点
                         p.next = newNode(hash, key, value, null);
                         if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
+                            // 3.5、binCount达到链表长度阈值（8），此时链表需要转化为红黑树
                             treeifyBin(tab, hash);
                         break;
                     }
                     if (e.hash == hash &&
                         ((k = e.key) == key || (key != null && key.equals(k))))
+                        // 3.6、待放入节点key在链表中已存在，此时e为已存在的节点
                         break;
                     p = e;
                 }
             }
             if (e != null) { // existing mapping for key
+                // 4、e节点不为空说明集合中包含待插入节点key
                 V oldValue = e.value;
                 if (!onlyIfAbsent || oldValue == null)
+                    // 判断是否允许覆盖旧值，onlyIfAbsent为true且oldValue不为空不允许覆盖
                     e.value = value;
+                // 5、回调反馈
                 afterNodeAccess(e);
                 return oldValue;
             }
         }
+        //6、修改计数
         ++modCount;
         if (++size > threshold)
+            // 7、当前集合大小达到阈值，扩容
             resize();
+        // 8、回调反馈
         afterNodeInsertion(evict);
         return null;
     }
@@ -654,48 +664,65 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     final Node<K,V>[] resize() {
         Node<K,V>[] oldTab = table;
+        // 1、获取table长度
         int oldCap = (oldTab == null) ? 0 : oldTab.length;
         int oldThr = threshold;
         int newCap, newThr = 0;
         if (oldCap > 0) {
+            // 2、table不为空
             if (oldCap >= MAXIMUM_CAPACITY) {
+                // 2.1、table长度达到所允许最大值，直接返回
                 threshold = Integer.MAX_VALUE;
                 return oldTab;
             }
             else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
                      oldCap >= DEFAULT_INITIAL_CAPACITY)
+                // 2.2、table长度和容量上限乘2
                 newThr = oldThr << 1; // double threshold
         }
         else if (oldThr > 0) // initial capacity was placed in threshold
+            // 3、table为空，容量上限不为空，table长度赋值为当前容量
             newCap = oldThr;
         else {               // zero initial threshold signifies using defaults
+            // 4、table为空，容量上限也为空，新的table长度和容量上限取默认值
             newCap = DEFAULT_INITIAL_CAPACITY;
             newThr = (int)(DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
         }
         if (newThr == 0) {
+            // 5、容量上限为空，根据table长度和存储因数计算容量上限
             float ft = (float)newCap * loadFactor;
             newThr = (newCap < MAXIMUM_CAPACITY && ft < (float)MAXIMUM_CAPACITY ?
                       (int)ft : Integer.MAX_VALUE);
         }
         threshold = newThr;
         @SuppressWarnings({"rawtypes","unchecked"})
-            Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
+        // 6、创建新的table，当前table指向新newTable
+        Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
         table = newTab;
         if (oldTab != null) {
+            // 7、旧table不为空，遍历重构新的table
             for (int j = 0; j < oldCap; ++j) {
                 Node<K,V> e;
                 if ((e = oldTab[j]) != null) {
+                    // 7.1、旧table第j处桶头结点不为空，将旧table第j处桶清空
                     oldTab[j] = null;
                     if (e.next == null)
+                        // 7.2、头结点不存在子节点，计算当前头结点在新table中位置（hash取模table长度）放入
                         newTab[e.hash & (newCap - 1)] = e;
                     else if (e instanceof TreeNode)
+                        // 7.3、头结点为红黑树节点，走红黑树扩容计算
                         ((TreeNode<K,V>)e).split(this, newTab, j, oldCap);
                     else { // preserve order
+                        // 7.4、头结点存在子节点，且为链表
+                        // 此处存在一个理论问题：
+                        // 将旧table中某一个桶中链表，转化为新table链表时，桶中的链表节点放入新table后，必然分摊在新table的两个桶中（2倍扩容原因）
                         Node<K,V> loHead = null, loTail = null;
                         Node<K,V> hiHead = null, hiTail = null;
                         Node<K,V> next;
                         do {
                             next = e.next;
+                            // 7.5、节点hash与table长度做按位与操作，分出高低位链表
+                            // 注：这里相较于1.8做了改进,并发扩容时不会再出现如1.7的链表死循环
                             if ((e.hash & oldCap) == 0) {
                                 if (loTail == null)
                                     loHead = e;
@@ -712,10 +739,12 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                             }
                         } while ((e = next) != null);
                         if (loTail != null) {
+                            // 7.6、低位链表不为空，放入新表中对应位置
                             loTail.next = null;
                             newTab[j] = loHead;
                         }
                         if (hiTail != null) {
+                            // 7.7、高位链表不为空，放入新表中对应位置
                             hiTail.next = null;
                             newTab[j + oldCap] = hiHead;
                         }
@@ -727,8 +756,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     }
 
     /**
-     * Replaces all linked nodes in bin at index for given hash unless
-     * table is too small, in which case resizes instead.
+     * 链表转化为红黑树
      */
     final void treeifyBin(Node<K,V>[] tab, int hash) {
         int n, index; Node<K,V> e;
@@ -1779,7 +1807,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         }
 
         /**
-         * Returns root of tree containing this node.
+         * 返回树顶级root节点
          */
         final TreeNode<K,V> root() {
             for (TreeNode<K,V> r = this, p;;) {
@@ -1940,18 +1968,23 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                                        int h, K k, V v) {
             Class<?> kc = null;
             boolean searched = false;
+            // 1、取得root节点，此处parent为this的parent
             TreeNode<K,V> root = (parent != null) ? root() : this;
             for (TreeNode<K,V> p = root;;) {
                 int dir, ph; K pk;
                 if ((ph = p.hash) > h)
+                    // 2、向左遍历
                     dir = -1;
                 else if (ph < h)
+                    // 3、向右遍历
                     dir = 1;
                 else if ((pk = p.key) == k || (k != null && k.equals(pk)))
+                    // 4、查询到存在对应key的节点，直接返回
                     return p;
                 else if ((kc == null &&
                           (kc = comparableClassFor(k)) == null) ||
                          (dir = compareComparables(kc, k, pk)) == 0) {
+                    // 5、hashCode相同但key值不相同（调用equal方法返回false）
                     if (!searched) {
                         TreeNode<K,V> q, ch;
                         searched = true;
@@ -1959,13 +1992,16 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                              (q = ch.find(h, k, kc)) != null) ||
                             ((ch = p.right) != null &&
                              (q = ch.find(h, k, kc)) != null))
+                            // 6、遍历左右树后，查询到对应节点，直接返回
                             return q;
                     }
+                    // 6、采用新的hash生成策略来比较
                     dir = tieBreakOrder(k, pk);
                 }
 
                 TreeNode<K,V> xp = p;
                 if ((p = (dir <= 0) ? p.left : p.right) == null) {
+                    // 7、未查询到对应节点，将新节点插入树中
                     Node<K,V> xpn = xp.next;
                     TreeNode<K,V> x = map.newTreeNode(h, k, v, xpn);
                     if (dir <= 0)
@@ -1976,6 +2012,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     x.parent = x.prev = xp;
                     if (xpn != null)
                         ((TreeNode<K,V>)xpn).prev = x;
+                    // 8、红黑树平衡调整，根节点切换到桶的头节点
                     moveRootToFront(tab, balanceInsertion(root, x));
                     return null;
                 }
@@ -2147,6 +2184,26 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         /* ------------------------------------------------------------ */
         // Red-black tree methods, all adapted from CLR
 
+
+        /**
+         * 左旋前提：当前节点存在右子节点
+         * 旋转说明：
+         *
+         * p 当前节点
+         * pp 当前节点父节点
+         * r 当前节点右子节点
+         * rl 当前节点右子节点的左子节点
+         *
+         * 1、p.right = rl; rl.parent = p
+         * 2、r.parent = pp; pp.(left/right) = r
+         * 3、r.left = p; p.parent = r
+         *
+         * @param root
+         * @param p
+         * @param <K>
+         * @param <V>
+         * @return
+         */
         static <K,V> TreeNode<K,V> rotateLeft(TreeNode<K,V> root,
                                               TreeNode<K,V> p) {
             TreeNode<K,V> r, pp, rl;
@@ -2154,6 +2211,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                 if ((rl = p.right = r.left) != null)
                     rl.parent = p;
                 if ((pp = r.parent = p.parent) == null)
+                    //当前节点父节点为根节点，将根节点涂黑
                     (root = r).red = false;
                 else if (pp.left == p)
                     pp.left = r;
@@ -2165,6 +2223,27 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             return root;
         }
 
+        /**
+         * 右旋前提：当前节点存在左子节点
+         *
+         * 旋转说明：
+         *
+         * p 当前节点
+         * pp 当前节点父节点
+         * l 当前节点左子节点
+         * lr 当前节点左子节点的右子节点
+         *
+         * 1、p.left = lr; lr.parent = p
+         * 2、l.parent = pp; pp.(left/right) = l
+         * 3、l.right = p; p.parent = l
+         *
+         *
+         * @param root
+         * @param p
+         * @param <K>
+         * @param <V>
+         * @return
+         */
         static <K,V> TreeNode<K,V> rotateRight(TreeNode<K,V> root,
                                                TreeNode<K,V> p) {
             TreeNode<K,V> l, pp, lr;
@@ -2183,52 +2262,84 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             return root;
         }
 
+        /**
+         * 红黑树特点
+         * 1、根节点为黑色
+         * 2、根节点到叶节点所有路径上，黑球数量相同
+         * 3、根节点到叶节点所有路径上，不存在连续红球
+         *
+         * 插入原则
+         * 每次插入节点为红色
+         *
+         * 插入节点x后保持红黑树平衡
+         *
+         * @param root
+         * @param x
+         * @param <K>
+         * @param <V>
+         * @return
+         */
         static <K,V> TreeNode<K,V> balanceInsertion(TreeNode<K,V> root,
                                                     TreeNode<K,V> x) {
             x.red = true;
             for (TreeNode<K,V> xp, xpp, xppl, xppr;;) {
                 if ((xp = x.parent) == null) {
+                    // 1、当前节点为根节点，将根节点涂黑并返回
                     x.red = false;
                     return x;
                 }
                 else if (!xp.red || (xpp = xp.parent) == null)
+                    // 2、当前节点的父节点为黑色，或者祖父节点不存在，返回
                     return root;
                 if (xp == (xppl = xpp.left)) {
+                    // 3、插入节点的父节点 是 祖父节点 的 左子节点
                     if ((xppr = xpp.right) != null && xppr.red) {
+                        // 3.1、祖父节点的右子节点存在且为红色；将祖父节点的左右子节点图黑，将祖父节点涂红，当前节点切换到祖父节点
                         xppr.red = false;
                         xp.red = false;
                         xpp.red = true;
                         x = xpp;
                     }
                     else {
+                        // 3.2、祖父节点的右子节点不存在或者不为红；
                         if (x == xp.right) {
+                            // 3.3、当前节点为父节点的右子节点；当前节点切换到父节点，以当前节点做左旋
                             root = rotateLeft(root, x = xp);
                             xpp = (xp = x.parent) == null ? null : xp.parent;
                         }
                         if (xp != null) {
+                            // 3.4、当前节点父节点不为空，涂黑
                             xp.red = false;
                             if (xpp != null) {
+                                // 3.5、当前节点祖父节点不为空，涂红
                                 xpp.red = true;
+                                // 3.6、以当前节点的祖父节点为轴心，右旋
                                 root = rotateRight(root, xpp);
                             }
                         }
                     }
                 }
                 else {
+                    // 4、插入节点的父节点 是 祖父节点 的 右子节点
                     if (xppl != null && xppl.red) {
+                        // 4.1、祖父节点的左子节点存在且为红色，将祖父节点左右子节点涂黑，祖父节点涂红，当前节点切换到祖父节点
                         xppl.red = false;
                         xp.red = false;
                         xpp.red = true;
                         x = xpp;
                     }
                     else {
+                        // 4.2、祖父节点的左子节点不存在或者不为红色
                         if (x == xp.left) {
+                            // 4.3、当前节点为父节点的左子节点，当前节点切换到父节点，以当前节点为轴心右旋
                             root = rotateRight(root, x = xp);
                             xpp = (xp = x.parent) == null ? null : xp.parent;
                         }
                         if (xp != null) {
+                            // 4.4、父节点不为空，涂黑
                             xp.red = false;
                             if (xpp != null) {
+                                // 4.5、祖父节点不为空，涂红，以祖父节点为轴心左旋
                                 xpp.red = true;
                                 root = rotateLeft(root, xpp);
                             }
