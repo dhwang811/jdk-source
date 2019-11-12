@@ -757,6 +757,9 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * 链表转化为红黑树
+     * 思路
+     * 1、二叉树查找、插入
+     * 2、红黑树插入平衡调整
      */
     final void treeifyBin(Node<K,V>[] tab, int hash) {
         int n, index; Node<K,V> e;
